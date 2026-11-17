@@ -183,7 +183,7 @@ function classifyOutcome(rcpt, changed) {
   }
   if (changed === false) return { ok: false, label: "Ran, but no change was stored", detail: "The record is identical before and after. Validators may not have agreed, or the page could not be read. Try again." };
   if (changed === null) return { ok: false, label: "Outcome could not be verified", detail: "The network did not confirm an accepted result and the record could not be read back. Check the transaction in the Explorer before relying on it." };
-  if (!status) return { ok: true, label: "Record changed on-chain", detail: "The network did not report a consensus status, so acceptance is inferred only from the stored change." };
+  if (!status) return { ok: false, label: "Not confirmed: the network reported no status", detail: "A receipt with no ACCEPTED or FINALIZED status is never treated as a success, even if the record seems to have changed. Check the transaction in the Explorer before relying on it." };
   return { ok: true, label: status === "FINALIZED" ? "Finalized" : "Accepted by validator consensus", detail: "" };
 }
 
@@ -207,7 +207,7 @@ async function send(label, functionName, args, note, probe) {
       return false;
     }
     const after = await read();
-    const changed = probe ? (before === null || after === null ? null : before !== after) : true;
+    const changed = probe ? (before === null || after === null ? null : before !== after) : null;
     const out = classifyOutcome(rcpt, changed);
     logTx(id, head + h + line(true, "Submitted") + line(out.ok, `<b>${esc(out.label)}</b>`) + (out.detail ? `<div class="mute"><small>${esc(out.detail)}</small></div>` : "") + (out.ok ? line(null, "Waiting for finality (it can still be appealed until then)…") : ""), out.ok ? "" : "err");
     await refresh();
@@ -272,6 +272,12 @@ async function refresh() {
   refreshBoard();
 }
 
+// Publishing is verified by reading the wallet's list back: the new prediction + page must now be stored.
+const normTxt = (x) => String(x || "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
+const probeMake = (st, u) => async () => {
+  const list = await readJson("get_calls_by_author", [accounts[current].address]);
+  return { n: list.length, stored: list.some((c) => c.url === u && normTxt(c.statement) === normTxt(st)) };
+};
 const probeWatch = (id) => async () => { const r = await readJson("get_call", [id]); return { status: r.status, resolves: r.resolves, note: r.last_note }; };
 
 async function renderDetail(w, d) {
@@ -320,7 +326,7 @@ function bind() {
       if (v.length < 8 || v.length > 200) { alert("The " + n + " must be 8 to 200 characters."); return; }
     }
     if (h.toLowerCase() === m.toLowerCase()) { alert("The hit and miss conditions must differ."); return; }
-    const ok = await send("Publish call", "make_call", [st, u, h, m]);
+    const ok = await send("Publish call", "make_call", [st, u, h, m], "Recording the call on-chain, then reading it back to confirm it was stored…", probeMake(st, u));
     if (ok) { ["f_statement", "f_hit", "f_miss"].forEach((i) => $(i).value = ""); document.querySelector('[data-tab="mine"]').click(); }
   };
 }
