@@ -109,7 +109,7 @@ a{color:var(--acc)}
         <input id="f_hit" maxlength="200" placeholder="Version 2.0 is listed as released">
         <label>It is a MISS when the page shows… (8 to 200 characters)</label>
         <input id="f_miss" maxlength="200" placeholder="Version 2.0 is cancelled or postponed to next year">
-        <p class="mute" style="margin:10px 0 0"><small>The conditions are fixed once you publish, so nobody can move the goalposts. Only https links to public hosts are accepted. If the page shows neither outcome yet, the call stays <b>OPEN</b> and can be settled later (up to 8 attempts).</small></p>
+        <p class="mute" style="margin:10px 0 0"><small>The conditions are fixed once you publish, so nobody can move the goalposts. Only https links to public hosts are accepted. If the page shows neither outcome yet, or cannot be read, the call stays <b>OPEN</b> and can be settled later. Each account gets 3 tries per call and there is no shared cap, so anyone else can still settle it.</small></p>
         <div class="row" style="margin-top:14px"><button id="newBtn">Publish call</button></div>
       </div>
     </div>
@@ -123,7 +123,7 @@ a{color:var(--acc)}
 </div>
 
 <script type="module">
-const DEFAULT_CONTRACT = "0xbFc888C376977a77a9A84cba04Ab12B092FC8AF7";
+const DEFAULT_CONTRACT = "0xf144E1D206ccD6bB644C8Da39e886a5892ae119c";
 const EXAMPLE_OWNER = "0xb2B565655Dd79A3b8aF76e846C22161bC47D044D";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -278,7 +278,7 @@ const probeMake = (st, u) => async () => {
   const list = await readJson("get_calls_by_author", [accounts[current].address]);
   return { n: list.length, stored: list.some((c) => c.url === u && normTxt(c.statement) === normTxt(st)) };
 };
-const probeWatch = (id) => async () => { const r = await readJson("get_call", [id]); return { status: r.status, resolves: r.resolves, note: r.last_note }; };
+const probeWatch = (id) => async () => { const r = await readJson("get_call", [id]); return { status: r.status, resolves: r.resolves, tries: r.tries || {}, note: r.last_note }; };
 
 async function renderDetail(w, d) {
   d.hidden = false;
@@ -292,7 +292,7 @@ async function renderDetail(w, d) {
     <label>Settled by this page</label><div class="mono">${esc(w.url)}</div>
     <label>It is a HIT when the page shows</label><div>${esc(w.hit_when)}</div>
     <label>It is a MISS when the page shows</label><div>${esc(w.miss_when)}</div>
-    <small>Author ${esc(w.author.slice(0, 8))}…${esc(w.author.slice(-4))} · settle attempts used: ${esc(w.resolves)} of 8</small>
+    <small>Author ${esc(w.author.slice(0, 8))}…${esc(w.author.slice(-4))} · settle attempts so far: ${esc(w.resolves)} · your tries: ${esc((w.tries || {})[accounts[current].address.toLowerCase()] || 0)} of 3 (no shared cap: another account can always settle it)</small>
     ${recLine ? `<p class="mute" style="margin:6px 0 0"><small>Author's track record: ${recLine}</small></p>` : ""}
     ${w.status === "HIT" ? `<p class="big" style="color:var(--ok)">Hit ✓</p>` : ""}
     ${w.status === "MISS" ? `<p class="big" style="color:var(--bad)">Miss ✗</p>` : ""}
@@ -301,7 +301,8 @@ async function renderDetail(w, d) {
     ${w.status === "OPEN" ? `<p class="mute"><small>Open: nothing is settled yet. Anyone can ask validators to read the page.</small></p>` : `<p class="mute"><small>Settled calls are final.</small></p>`}
     <p class="mute" style="margin-top:12px"><small>Read from any contract with <span class="mono">is_hit(call_id)</span> or <span class="mono">get_record(author)</span>.</small></p>
     <div class="row" style="margin-top:14px">
-      ${w.status === "OPEN" ? `<button id="resBtn_${esc(w.id)}">Settle now</button>` : ""}
+      ${w.status === "OPEN" && ((w.tries || {})[accounts[current].address.toLowerCase()] || 0) < 3 ? `<button id="resBtn_${esc(w.id)}">Settle now</button>` : ""}
+      ${w.status === "OPEN" && ((w.tries || {})[accounts[current].address.toLowerCase()] || 0) >= 3 ? `<span class="mute"><small>This account used its 3 tries. Switch account above to settle it as someone else.</small></span>` : ""}
     </div>`;
   const r = $("resBtn_" + w.id);
   if (r) r.onclick = () => send(`Settle call #${w.id}`, "resolve", [w.id], "Validators are reading the page and agreeing on a verdict. This can take a minute or two.", probeWatch(w.id)).then(() => refresh());
@@ -312,8 +313,8 @@ function bind() {
     document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
     for (const t of ["board", "mine", "new"]) $("tab-" + t).hidden = t !== b.dataset.tab;
   });
-  $("contract").value = store.get("cb_contract_v1") || DEFAULT_CONTRACT;
-  $("contract").onchange = () => { store.set("cb_contract_v1", addr()); selected = null; boardSel = null; refresh(); };
+  $("contract").value = store.get("cb_contract_v2") || DEFAULT_CONTRACT;
+  $("contract").onchange = () => { store.set("cb_contract_v2", addr()); selected = null; boardSel = null; refresh(); };
   $("who").onchange = () => { current = $("who").value; selected = null; makeClient(); refresh(); };
   $("reload").onclick = refresh;
   $("reloadBoard").onclick = refreshBoard;
