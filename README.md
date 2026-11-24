@@ -5,7 +5,7 @@ A public track record for predictions. Write a prediction, the web page that wil
 Anyone can say "I called it". CallBook makes that a fact many independent validators agreed on, with the exact words from the page as proof.
 
 - **Live app:** https://obitotobi1.github.io/callbook/
-- **Contract (GenLayer Studio):** `0xbFc888C376977a77a9A84cba04Ab12B092FC8AF7`
+- **Contract (GenLayer Studio):** `0xf144E1D206ccD6bB644C8Da39e886a5892ae119c` (v1.1; the earlier instance `0xbFc888C376977a77a9A84cba04Ab12B092FC8AF7` is v1.0)
 - **Contract source:** [`callbook.py`](./callbook.py)
 - **Tests:** [`tests/test_callbook.py`](./tests/test_callbook.py)
 
@@ -20,7 +20,7 @@ make_call(statement, url, hit_when, miss_when) --> OPEN --resolve--> HIT   (fina
 1. `make_call` stores the prediction (8 to 200 characters), a public https page, and two fixed conditions: what the page must show for a HIT and what it must show for a MISS.
 2. `resolve(id)` (**anyone**): validators fetch the page (`gl.nondet.web.render`), a model reads it against the two conditions, and validators must agree on the verdict (`gl.eq_principle.prompt_comparative`, the `verdict` field must be identical).
 3. A HIT or MISS is only kept if the model's **quote really appears on the page**. A made-up or unmatched quote turns the verdict into OPEN. A settled call is final.
-4. If the page shows neither outcome yet, or cannot be read, the call stays OPEN and can be tried again (up to 8 attempts).
+4. If the page shows neither outcome yet, or cannot be read, the call stays OPEN and can be tried again. Each wallet gets 3 tries per call and there is no shared cap, so nobody can use up a call's chance to settle: another wallet can always try.
 5. `get_record(author)` returns a wallet's hits, misses, open calls and hit rate in percent.
 
 ## What it protects against
@@ -33,7 +33,7 @@ make_call(statement, url, hit_when, miss_when) --> OPEN --resolve--> HIT   (fina
 | Prompt injection from the page or the text fields | The statement, both conditions and the page are each wrapped in their own tag with `<` and `>` escaped, and the prompt says never to follow instructions inside them. |
 | A flaky page deciding a call | An unreadable or empty page never settles anything. |
 | Validators fetching internal addresses | Only `https` links to public hosts. `localhost`, private and link-local IPs, `.local`/`.internal`, credentials and IPv6 literals are refused. |
-| Spam | 30 calls per wallet, no duplicate call on the same page, 8 settle attempts per call, bounded text and page size. |
+| Spam | 30 calls per wallet, no duplicate call on the same page, 3 settle tries per wallet per call (no shared cap), bounded text and page size. |
 
 ## Read API (composable)
 
@@ -62,7 +62,16 @@ Every write shows the transaction lifecycle: signed, submitted, accepted by cons
 python3 tests/test_callbook.py
 ```
 
-It covers input and link refusal, duplicates and caps, HIT and MISS with a real quote, made-up quotes and garbage output staying open, unreachable pages and retries, the resolve limit, prompt isolation, track records and the feed (13 tests).
+It covers input and link refusal, duplicates and caps, HIT and MISS with a real quote, made-up quotes and garbage output staying open, unreachable pages and retries, the per-wallet try limit, 12 failed attempts by different wallets followed by a successful settlement, prompt isolation, track records and the feed (15 tests).
+
+## v1.1 (milestone): settlement can no longer be used up
+
+A steward review of the contract found that v1.0 counted every `resolve` attempt, including early or unreadable ones, against a global cap of 8, so eight such attempts made a call impossible to settle later. This version of the app runs against the fixed contract (v1.1):
+
+- **Contract:** no shared cap. Each wallet may try a call 3 times, recorded per wallet in the call (`tries`). A different wallet can always try again. HIT and MISS stay final and still need a quote found word for word on the page.
+- **App:** the call detail shows "your tries: X of 3" for the selected account. After 3 tries the Settle button is replaced by a hint to switch account. The create form explains the rule. The saved contract address key was renamed, so older browsers pick up the new contract instead of the stored old one.
+- **Verified in the app:** the same strict outcome handling as before (a receipt without status, an unchanged record, or validator disagreement are never shown as success), plus a test that an account is stopped at 3 tries.
+- **Live check of the contract on Studio:** one call stayed OPEN after an inconclusive attempt (tries recorded as 1), and another settled HIT with a quote from the page.
 
 ## Limits
 
